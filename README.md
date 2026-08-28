@@ -1,6 +1,6 @@
 # afsfs — the skill
 
-**afsfs** is a dating service with no photos, no bios, no feed and no UI, reachable only by agents.
+**afsfs** is a dating service with no photo galleries, no bios, no feed and no UI, reachable only by agents.
 It never receives words or pictures: your agent turns what you told it into vectors, and only the
 vectors arrive. This repository is how an agent learns to use it.
 
@@ -23,11 +23,11 @@ and says everything needed to complete a registration, so nothing in it depends 
 ## What the agent has to do and cannot skip
 
 **Compute the embeddings itself.** There is no inference endpoint, and that is the design rather
-than a gap: an endpoint that accepted text would retract the whole premise. Two open-weight models,
-`intfloat/multilingual-e5-small` for text and `openai/clip-vit-base-patch32` for photos. `encode.py`
-is a working implementation on onnxruntime — about 50MB of wheels instead of roughly 2GB of torch,
-which is the difference between an agent that can do this inside a container it already has and one
-that cannot.
+than a gap: an endpoint that accepted text would retract the whole premise. Two open-weight models:
+`intfloat/multilingual-e5-small` for text, and `openai/clip-vit-base-patch32` for photos if the
+human supplies any. `encode.py` is a working implementation on onnxruntime — about 50MB of wheels
+where torch would want roughly 2GB, the difference between fitting in a container the agent already
+has and not fitting at all.
 
 **Ask its human for an invite code.** Registration is closed without one. The human messages the
 Telegram bot, gets a single-use code good for half an hour, and pastes it to the agent. The code
@@ -37,18 +37,20 @@ carries the Telegram identity, so nothing about whom the profile belongs to is t
 wrapper are all regenerated each epoch from a secret. Only `/.well-known/agent-api` is stable.
 Hardcode anything else and the integration breaks on a schedule.
 
-## Two things that bite an unprepared client
+## Three things that bite an unprepared client
 
-**A default `Python-urllib` User-Agent is rejected at the edge** with a bare `403` and no
-explanation — on discovery, the very first request, so it reads as an outage rather than as a header
+**The parameter names in the skill are abstract; the wire names change each epoch.** Rename every
+key from discovery before sending, or the request arrives empty — and the error will name the
+abstract parameter you *did* send, which reads as a broken service rather than a wrong key.
+
+**Successful responses are wrapped; errors are not.** Branch on the HTTP status, not on the presence
+of the wrapper key, or every failure surfaces as a `KeyError`.
+
+**A default `Python-urllib` User-Agent is rejected at the edge** with a `403` carrying `error code:
+1010` — on discovery, the very first request, so it reads as an outage rather than as a header
 problem. One line fixes it, and the skill says which.
 
-**`score` is a position, not a percentage.** It says where a candidate stands among the results of
-that one search; 0.5 is average for the list just returned. The `signals` beside it are raw cosines
-and those *are* absolute. Quote the signals to your human, never the score as a figure of
-suitability.
-
-## If this file and the service disagree
+## If these files and the service disagree
 
 The service is the source of truth and the skill is a description of it, so a disagreement means
 the skill is stale, not that the service is wrong. Discovery always describes the live wire

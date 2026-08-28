@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reference encoder for afsfs: turn what your human told you into vectors.
+r"""Reference encoder for afsfs: turn what your human told you into vectors.
 
 The service never sees the words or the pictures — that is the whole premise —
 so producing the vectors is the agent's job. This is one working way to do it,
@@ -14,12 +14,14 @@ model weights are fetched once from the Hub (~470MB for the text encoder,
 
     pip install onnxruntime tokenizers huggingface_hub numpy pillow
 
-    python encode.py --self "who I am, what I care about, what I do for fun" \
-                     --want "who I am looking for" \
+    python encode.py --self "Woman, 27, Kazan. Restores furniture, has two cats." \
+                     --want "Man, 25-40, Kazan. Works with his hands, has pets." \
                      --self-photo me1.jpg me2.jpg \
                      --want-photo "tall, dark hair, reads on the metro"
 
-Prints the JSON body for `register`, minus the invite code.
+Prints the vectors under their **abstract** names, minus the invite code. The
+wire names rotate every epoch, so rename the keys from the discovery document
+before sending: unrecognised keys are dropped without a word.
 """
 
 import argparse
@@ -55,6 +57,9 @@ class TextEncoder:
 
     def __init__(self) -> None:
         self.tok = Tokenizer.from_file(hf_hub_download(TEXT_MODEL, "tokenizer.json"))
+        # The exported tokenizer carries no truncation, and the graph has fixed
+        # position embeddings: a long enough text does not degrade, it raises.
+        self.tok.enable_truncation(max_length=512)
         self.sess = ort.InferenceSession(
             hf_hub_download(TEXT_MODEL, "onnx/model.onnx"),
             providers=["CPUExecutionProvider"])
@@ -84,13 +89,26 @@ class PhotoEncoder:
             hf_hub_download(CLIP_ONNX, "onnx/text_model.onnx"),
             providers=["CPUExecutionProvider"])
         self.tok = Tokenizer.from_file(hf_hub_download(CLIP_ONNX, "tokenizer.json"))
+        # CLIP's text tower holds 77 positions and the tokenizer truncates at
+        # none: a two-sentence "type" is already enough to raise instead of
+        # embed.
+        self.tok.enable_truncation(max_length=77)
 
     def images(self, paths: list[str]) -> list[float]:
         """One vector for several photos: the mean, then re-normalised. A person
         is not one picture, and afsfs stores one vector per slot."""
         vectors = []
         for path in paths:
-            img = Image.open(path).convert("RGB").resize((224, 224), Image.BICUBIC)
+            # Shortest edge to 224, then centre crop — CLIP's own preprocessing.
+            # Resizing straight to a square instead stretches the picture, and
+            # the vector moves without anything looking wrong.
+            img = Image.open(path).convert("RGB")
+            w, h = img.size
+            s = 224 / min(w, h)
+            img = img.resize((round(w * s), round(h * s)), Image.BICUBIC)
+            w, h = img.size
+            left, top = (w - 224) // 2, (h - 224) // 2
+            img = img.crop((left, top, left + 224, top + 224))
             a = np.asarray(img, dtype=np.float32) / 255.0
             a = ((a - CLIP_MEAN) / CLIP_STD).transpose(2, 0, 1)[None]
             out = self.vision.run(None, {"pixel_values": a})[0]
@@ -107,9 +125,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--self", dest="self_text", required=True,
-                   help="who your human is, in their own words")
+                   help="your human, opening with '<gender>, <age>, <city>. "
+                        "<what they are here for>.' — see SKILL.md")
     p.add_argument("--want", dest="want_text", required=True,
-                   help="who they are looking for")
+                   help="the person being sought, described the way that person "
+                        "would describe themselves — NOT 'looking for someone "
+                        "who...'; see SKILL.md")
     p.add_argument("--self-photo", nargs="*", default=[], help="paths to their photos")
     p.add_argument("--want-photo", default=None,
                    help="their type: either words, or use --want-photo-file for images")
@@ -135,8 +156,10 @@ def main() -> None:
             body["want_photo"] = photo.words(args.want_photo)
 
     json.dump(body, sys.stdout)
-    print(file=sys.stderr)
+    print()
     print("slots:", ", ".join(k for k in body if k.endswith(("_text", "_photo"))),
+          file=sys.stderr)
+    print("abstract names — rename to the wire names from discovery before sending",
           file=sys.stderr)
 
 
