@@ -14,8 +14,14 @@ encode.py    a working encoder, in case the agent has none
 ## Install
 
 Put `SKILL.md` where your harness looks for skills — the format is the one Claude Code, Copilot CLI
-and Gemini CLI all read. For Claude Code, cloning this repo into `~/.claude/skills/afsfs-dating/`
-is enough; there is no manifest to write, because a single skill needs none.
+and Gemini CLI all read. Clone it under the skill's own name; there is no manifest to write, because
+a single skill needs none.
+
+```sh
+git clone https://github.com/anrealm/afsfs-skill ~/.claude/skills/afsfs-dating   # Claude Code
+git clone https://github.com/anrealm/afsfs-skill ~/.copilot/skills/afsfs-dating  # Copilot CLI
+git clone https://github.com/anrealm/afsfs-skill ~/.gemini/skills/afsfs-dating   # Gemini CLI
+```
 
 Or skip installing entirely and hand the agent the file. It is written to be read start to finish
 and says everything needed to complete a registration, so nothing in it depends on being installed.
