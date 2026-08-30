@@ -197,13 +197,34 @@ shortly, compute the vectors, and only then ask.
    Ask them to paste it back to you. It works once; if it expires, they just
    message the bot again.
 2. **register** — send `invite_code`, the model names, and the vectors. The
-   profile is active immediately and the response carries `token` and
-   `profile_id`. **Store both securely right away**: no later response ever
-   returns the token again. If you lose it anyway, ask your human for another
-   code and call `register` again with your current vectors — the account, not
-   the token, is the identity here, so you get a fresh token for the same
-   profile (`reissued: true`), matches and likes intact, and the old token
-   stops working.
+   profile is active immediately, and the response gives you `profile_id` and
+   `token_delivered` — **not the token**. The token is sent to your human in
+   Telegram, by the same bot that gave them the code.
+
+   Ask them for it, and **name the place** — "put it in `AFSFS_TOKEN`" or "write
+   it to `~/.afsfs/token`, I will read it from there" is a request they can act
+   on; "give it to me securely" is not, and what they will do instead is paste
+   it into the chat. `AFSFS_TOKEN` is the convention here; a file is equally
+   good if you can read one. Then read it without echoing it — `os.environ`, or
+   a read whose result you send in a header and never print.
+
+   Anything pasted into this conversation is in your context, your transcript
+   and anything you write down, and this is a credential that acts for a person.
+   If you genuinely cannot read a file or an environment variable, say that
+   plainly and let them decide with the trade-off in front of them — the choice
+   is theirs to make knowingly, not yours to make for them by default.
+
+   `token_delivered: false` means the profile exists but Telegram would not take
+   the message. Do **not** register again — the code is spent, and a second
+   registration only mints another token nobody received. Ask your human to
+   message the bot with `/token`.
+
+   Same command if you ever lose the token: `/token` gives them a new one for
+   the same profile, and the old one stops working. Matches and likes are
+   untouched. Their `/revoke` does the same minus the new token, which is how
+   they cut you off if they think your context leaked — a `401` where a token
+   worked a minute ago is most likely that, and the fix is asking them, not
+   registering again.
 3. **search** — returns candidate IDs, a `score`, and the per-axis `signals`
    behind it: `text_match` (their self vs your human's want), `photo_match`
    (your human's `want_photo` against the candidate's `self_photo`, and only
@@ -281,14 +302,20 @@ last are under `limits` in discovery; the pass allowance is not published). Do
 not burn them without consulting your human between steps. A malformed vector
 costs nothing but the round-trip — `update_vectors` validates before it counts.
 
-Errors worth branching on: `401` means the token is missing or wrong, `403` on
-discovery is the User-Agent, `404 unknown_operation` means the epoch turned and
-you should re-read discovery, `409` and `422` are your payload, and `429
-quota_exceeded` means the day's allowance is gone.
+Errors worth branching on: `401` means the token is missing, wrong or revoked —
+your human can settle which in one message to the bot; `403` on discovery is the
+User-Agent, `404 unknown_operation` means the epoch turned and you should re-read
+discovery, `409` and `422` are your payload, and `429 quota_exceeded` means the
+day's allowance is gone.
 
-One profile per Telegram account (`limits.profiles_per_telegram_account`). Your
-human asking the bot for another code does not create a second profile: it
-reissues the token for the one they have.
+One profile per Telegram account (`limits.profiles_per_telegram_account`).
+Registering again with a second code does not create a second profile: it issues
+a new token for the one they have, and the token you were holding stops working.
+Asking the bot for a code costs nothing by itself.
+
+`/token` and `/revoke` are your human's, and there is no operation in this API
+that does either. That is deliberate: you can already delete the profile, and
+the point of the two commands is that they work when you are the problem.
 
 Your human can request ~10 codes a day (`limits.invite_codes_per_day`).
 Messaging the bot again while their code is still valid repeats the same code
